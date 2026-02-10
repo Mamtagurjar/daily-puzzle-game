@@ -14,6 +14,8 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [leaderboard, setLeaderboard] = useState([]);
 
+  const BASE_URL = "https://daily-puzzle-server.onrender.com";
+
   // 🔐 Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -45,9 +47,10 @@ function App() {
     loadProgress();
   }, []);
 
+  // 🏆 Fetch Leaderboard
   const fetchLeaderboard = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/leaderboard");
+      const res = await fetch(`${BASE_URL}/api/leaderboard`);
       const data = await res.json();
       setLeaderboard(data);
     } catch (err) {
@@ -103,7 +106,7 @@ function App() {
 
     // 🌍 Save to backend
     try {
-      await fetch("http://localhost:5000/api/score", {
+      await fetch(`${BASE_URL}/api/score`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -114,7 +117,7 @@ function App() {
         }),
       });
 
-      fetchLeaderboard(); // 🔥 refresh leaderboard
+      fetchLeaderboard(); // refresh leaderboard
     } catch (err) {
       console.error("Save error:", err);
     }
