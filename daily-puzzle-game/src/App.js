@@ -14,7 +14,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [leaderboard, setLeaderboard] = useState([]);
 
-  const BASE_URL = "https://daily-puzzle-server.onrender.com";
+  const BASE_URL = "https://daily-puzzle-server.onrender.com/api/score";
 
   // 🔐 Auth Listener
   useEffect(() => {
