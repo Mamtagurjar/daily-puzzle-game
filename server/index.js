@@ -76,24 +76,36 @@ app.get("/api/leaderboard", async (req, res) => {
 });
 
 // ================= GET USER STATS =================
-app.get("/api/user/:uid", async (req, res) => {
-  const { uid } = req.params;
-
+app.post("/api/score", async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT COUNT(*) AS total_days,
-              SUM(score) AS total_score
-       FROM daily_scores
-       WHERE firebase_uid = $1`,
-      [uid]
+    const { firebase_uid, answer, correctAnswer } = req.body;
+
+    if (!firebase_uid || !answer || !correctAnswer) {
+      return res.status(400).json({ error: "Invalid input" });
+    }
+
+    let scoreToAdd = 0;
+
+    if (answer === correctAnswer) {
+      scoreToAdd = 10;
+    }
+
+    await pool.query(
+      `INSERT INTO scores (firebase_uid, score)
+       VALUES ($1, $2)
+       ON CONFLICT (firebase_uid)
+       DO UPDATE SET score = scores.score + $2`,
+      [firebase_uid, scoreToAdd]
     );
 
-    res.json(result.rows[0]);
+    res.json({ message: "Score updated securely" });
+
   } catch (err) {
-    console.error("User stats error:", err);
-    res.status(500).json({ error: "Database error" });
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
   }
 });
+
 
 // ================= START SERVER =================
 app.listen(PORT, () => {
