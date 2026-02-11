@@ -13,9 +13,9 @@ function App() {
   const [attempted, setAttempted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [leaderboard, setLeaderboard] = useState([]);
-  const [localAttempts, setLocalAttempts] = useState(0); // 🔥 batching counter
+  const [batchCounter, setBatchCounter] = useState(0); // ✅ batching counter
 
-  const BASE_URL = "https://daily-puzzle-server.onrender.com/api";
+  const BASE_URL = "https://daily-puzzle-server.onrender.com";
 
   // 🔐 Auth Listener
   useEffect(() => {
@@ -48,10 +48,10 @@ function App() {
     loadProgress();
   }, []);
 
-  // 🏆 Fetch Leaderboard
+  // 🏆 Leaderboard
   const fetchLeaderboard = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/leaderboard`);
+      const res = await fetch(`${BASE_URL}/api/leaderboard`);
       const data = await res.json();
       setLeaderboard(data);
     } catch (err) {
@@ -60,11 +60,7 @@ function App() {
   };
 
   const login = async () => {
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (err) {
-      console.error("Login error:", err);
-    }
+    await signInWithPopup(auth, provider);
   };
 
   const logout = async () => {
@@ -73,7 +69,7 @@ function App() {
     setAttempted(false);
     setResult("");
     setAnswer("");
-    setLocalAttempts(0);
+    setBatchCounter(0);
   };
 
   const checkAnswer = async () => {
@@ -87,9 +83,35 @@ function App() {
     const isCorrect = puzzle.validate(answer.trim());
 
     if (isCorrect) {
-      newResult = "Correct ✅";
       newScore = score + 10;
+      newResult = "Correct ✅";
       setScore(newScore);
+
+      // ✅ Increase batching counter ONLY on correct answers
+      const updatedBatch = batchCounter + 1;
+      setBatchCounter(updatedBatch);
+
+      // 🔥 Sync every 5 correct puzzles
+      if (updatedBatch >= 5) {
+        try {
+          await fetch(`${BASE_URL}/api/score`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              firebase_uid: user.uid,
+              score: newScore,
+            }),
+          });
+
+          console.log("✅ Batch synced to server");
+          setBatchCounter(0);
+          fetchLeaderboard();
+        } catch (err) {
+          console.error("Batch sync error:", err);
+        }
+      }
     } else {
       newResult = "Wrong ❌";
     }
@@ -99,37 +121,12 @@ function App() {
 
     const today = new Date().toISOString().split("T")[0];
 
-    // 💾 Save locally
+    // 💾 Always save locally
     await saveProgress(today, {
       score: newScore,
       attempted: true,
       result: newResult,
     });
-
-    // 🔥 Increase local attempt counter
-    const updatedAttempts = localAttempts + 1;
-    setLocalAttempts(updatedAttempts);
-
-    // 🔥 Only sync every 5 puzzles
-    if (updatedAttempts % 5 === 0) {
-      try {
-        await fetch(`${BASE_URL}/score`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            firebase_uid: user.uid,
-            score: newScore,
-          }),
-        });
-
-        console.log("✅ Synced to server (batch of 5)");
-        fetchLeaderboard();
-      } catch (err) {
-        console.error("Batch sync error:", err);
-      }
-    }
 
     setLoading(false);
   };
@@ -156,8 +153,12 @@ function App() {
           🧠 Daily Brain Battle
         </h1>
 
-        <p className="text-yellow-400 font-semibold mb-4">
+        <p className="text-yellow-400 font-semibold mb-2">
           Score: {score}
+        </p>
+
+        <p className="text-sm text-gray-300 mb-4">
+          Sync in: {5 - batchCounter} correct puzzles
         </p>
 
         {puzzle && (
@@ -180,7 +181,7 @@ function App() {
               disabled={attempted || loading}
               className="w-full py-2 rounded-lg font-bold bg-yellow-400 hover:bg-yellow-300 text-black"
             >
-              {loading ? "Saving..." : "Submit"}
+              {loading ? "Checking..." : "Submit"}
             </button>
 
             {result && (
@@ -199,6 +200,7 @@ function App() {
         </button>
       </div>
 
+      {/* Leaderboard */}
       <div className="mt-8 w-[380px] bg-white/10 backdrop-blur-lg p-6 rounded-2xl border border-white/20">
         <h2 className="text-xl font-bold mb-4 text-center">
           🏆 Leaderboard

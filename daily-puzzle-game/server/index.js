@@ -121,3 +121,44 @@ app.post("/api/score", async (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
+
+// ================= VALIDATE ANSWER =================
+app.post("/api/validate", async (req, res) => {
+  const { firebase_uid, answer, puzzleDate } = req.body;
+
+  if (!firebase_uid || !answer) {
+    return res.status(400).json({ error: "Missing fields" });
+  }
+
+  try {
+    // 🔐 Generate correct puzzle server-side
+    const correctAnswer = generateServerPuzzleAnswer(puzzleDate);
+
+    const isCorrect =
+      answer.toString().trim().toLowerCase() ===
+      correctAnswer.toString().trim().toLowerCase();
+
+    res.json({
+      correct: isCorrect,
+      correctAnswer: correctAnswer
+    });
+
+  } catch (err) {
+    console.error("Validation error:", err);
+    res.status(500).json({ error: "Server validation failed" });
+  }
+});
+
+// 🔥 SAME puzzle logic as frontend but hidden on server
+function generateServerPuzzleAnswer(date) {
+  const today = new Date(date || new Date());
+  const seed = today.getDate();
+
+  // Simple example puzzle logic
+  const num1 = seed;
+  const num2 = seed + 3;
+
+  return (num1 + num2).toString();
+}
+
+
