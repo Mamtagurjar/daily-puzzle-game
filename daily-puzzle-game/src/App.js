@@ -13,9 +13,9 @@ function App() {
   const [attempted, setAttempted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [leaderboard, setLeaderboard] = useState([]);
+  const [localAttempts, setLocalAttempts] = useState(0); // 🔥 batching counter
 
-  // ✅ Correct Base URL
-  const BASE_URL = "https://daily-puzzle-server.onrender.com";
+  const BASE_URL = "https://daily-puzzle-server.onrender.com/api";
 
   // 🔐 Auth Listener
   useEffect(() => {
@@ -51,7 +51,7 @@ function App() {
   // 🏆 Fetch Leaderboard
   const fetchLeaderboard = async () => {
     try {
-      const res = await fetch(`${BASE_URL}/api/leaderboard`);
+      const res = await fetch(`${BASE_URL}/leaderboard`);
       const data = await res.json();
       setLeaderboard(data);
     } catch (err) {
@@ -73,6 +73,7 @@ function App() {
     setAttempted(false);
     setResult("");
     setAnswer("");
+    setLocalAttempts(0);
   };
 
   const checkAnswer = async () => {
@@ -105,22 +106,29 @@ function App() {
       result: newResult,
     });
 
-    // 🌍 Save to backend
-    try {
-      await fetch(`${BASE_URL}/api/score`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          firebase_uid: user.uid,
-          score: newScore,
-        }),
-      });
+    // 🔥 Increase local attempt counter
+    const updatedAttempts = localAttempts + 1;
+    setLocalAttempts(updatedAttempts);
 
-      fetchLeaderboard(); // refresh leaderboard
-    } catch (err) {
-      console.error("Save error:", err);
+    // 🔥 Only sync every 5 puzzles
+    if (updatedAttempts % 5 === 0) {
+      try {
+        await fetch(`${BASE_URL}/score`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            firebase_uid: user.uid,
+            score: newScore,
+          }),
+        });
+
+        console.log("✅ Synced to server (batch of 5)");
+        fetchLeaderboard();
+      } catch (err) {
+        console.error("Batch sync error:", err);
+      }
     }
 
     setLoading(false);
@@ -142,7 +150,6 @@ function App() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-indigo-900 via-purple-900 to-black text-white p-4">
 
-      {/* GAME CARD */}
       <div className="bg-white/10 backdrop-blur-lg p-8 rounded-3xl shadow-2xl w-[380px] text-center border border-white/20">
 
         <h1 className="text-4xl font-extrabold mb-2">
@@ -163,32 +170,21 @@ function App() {
               type="text"
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") checkAnswer();
-              }}
               disabled={attempted}
-              className="w-full px-4 py-2 rounded-lg text-black mb-4 outline-none focus:ring-2 focus:ring-yellow-400 transition"
+              className="w-full px-4 py-2 rounded-lg text-black mb-4"
               placeholder="Type your answer..."
             />
 
             <button
               onClick={checkAnswer}
               disabled={attempted || loading}
-              className={`w-full py-2 rounded-lg font-bold transition ${
-                attempted
-                  ? "bg-gray-500"
-                  : "bg-yellow-400 hover:bg-yellow-300 text-black"
-              }`}
+              className="w-full py-2 rounded-lg font-bold bg-yellow-400 hover:bg-yellow-300 text-black"
             >
               {loading ? "Saving..." : "Submit"}
             </button>
 
             {result && (
-              <p className={`mt-4 text-xl font-bold ${
-                result.includes("Correct")
-                  ? "text-green-400 animate-pulse"
-                  : "text-red-400"
-              }`}>
+              <p className="mt-4 text-xl font-bold">
                 {result}
               </p>
             )}
@@ -197,13 +193,12 @@ function App() {
 
         <button
           onClick={logout}
-          className="mt-6 bg-red-500 hover:bg-red-600 px-6 py-2 rounded-lg transition"
+          className="mt-6 bg-red-500 hover:bg-red-600 px-6 py-2 rounded-lg"
         >
           Logout
         </button>
       </div>
 
-      {/* LEADERBOARD */}
       <div className="mt-8 w-[380px] bg-white/10 backdrop-blur-lg p-6 rounded-2xl border border-white/20">
         <h2 className="text-xl font-bold mb-4 text-center">
           🏆 Leaderboard
