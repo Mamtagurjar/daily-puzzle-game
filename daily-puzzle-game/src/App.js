@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { auth, provider } from "./services/firebase";
 import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
-import { getDailyPuzzle } from "./puzzles/PuzzleGenerator";
 import { saveProgress, getProgress } from "./utils/db";
 
 function App() {
@@ -13,11 +12,11 @@ function App() {
   const [attempted, setAttempted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [leaderboard, setLeaderboard] = useState([]);
-  const [batchCounter, setBatchCounter] = useState(0); // ✅ batching counter
+  const [batchCounter, setBatchCounter] = useState(0);
 
   const BASE_URL = "https://daily-puzzle-server.onrender.com";
 
-  // 🔐 Auth Listener
+  // 🔐 Auth
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -25,13 +24,23 @@ function App() {
     return () => unsubscribe();
   }, []);
 
-  // 🧠 Load Puzzle
+  // 🧠 Fetch Puzzle From Server
   useEffect(() => {
     if (user) {
-      setPuzzle(getDailyPuzzle());
+      fetchDailyPuzzle();
       fetchLeaderboard();
     }
   }, [user]);
+
+  const fetchDailyPuzzle = async () => {
+    try {
+      const res = await fetch(`${BASE_URL}/api/puzzle`);
+      const data = await res.json();
+      setPuzzle(data);
+    } catch (err) {
+      console.error("Puzzle fetch error:", err);
+    }
+  };
 
   // 💾 Load Local Progress
   useEffect(() => {
@@ -72,28 +81,42 @@ function App() {
     setBatchCounter(0);
   };
 
+  // 🔥 SERVER VALIDATION
   const checkAnswer = async () => {
-    if (attempted || !puzzle || !user || loading) return;
+    if (attempted || !user || loading) return;
 
     setLoading(true);
 
-    let newScore = score;
-    let newResult = "";
+    const today = new Date().toISOString().split("T")[0];
 
-    const isCorrect = puzzle.validate(answer.trim());
+    try {
+      const res = await fetch(`${BASE_URL}/api/validate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          firebase_uid: user.uid,
+          answer: answer.trim(),
+          puzzleDate: today,
+        }),
+      });
 
-    if (isCorrect) {
-      newScore = score + 10;
-      newResult = "Correct ✅";
-      setScore(newScore);
+      const data = await res.json();
 
-      // ✅ Increase batching counter ONLY on correct answers
-      const updatedBatch = batchCounter + 1;
-      setBatchCounter(updatedBatch);
+      let newScore = score;
+      let newResult = "";
 
-      // 🔥 Sync every 5 correct puzzles
-      if (updatedBatch >= 5) {
-        try {
+      if (data.correct) {
+        newScore = score + 10;
+        newResult = "Correct ✅";
+        setScore(newScore);
+
+        const updatedBatch = batchCounter + 1;
+        setBatchCounter(updatedBatch);
+
+        // 🔥 Sync every 5 correct
+        if (updatedBatch >= 5) {
           await fetch(`${BASE_URL}/api/score`, {
             method: "POST",
             headers: {
@@ -105,28 +128,26 @@ function App() {
             }),
           });
 
-          console.log("✅ Batch synced to server");
           setBatchCounter(0);
           fetchLeaderboard();
-        } catch (err) {
-          console.error("Batch sync error:", err);
         }
+
+      } else {
+        newResult = `Wrong ❌ (Correct: ${data.correctAnswer})`;
       }
-    } else {
-      newResult = "Wrong ❌";
+
+      setResult(newResult);
+      setAttempted(true);
+
+      await saveProgress(today, {
+        score: newScore,
+        attempted: true,
+        result: newResult,
+      });
+
+    } catch (err) {
+      console.error("Validation error:", err);
     }
-
-    setResult(newResult);
-    setAttempted(true);
-
-    const today = new Date().toISOString().split("T")[0];
-
-    // 💾 Always save locally
-    await saveProgress(today, {
-      score: newScore,
-      attempted: true,
-      result: newResult,
-    });
 
     setLoading(false);
   };
