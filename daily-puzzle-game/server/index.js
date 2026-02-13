@@ -2,9 +2,19 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const { Pool } = require("pg");
+const rateLimit = require("express-rate-limit");
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
+
+// ================= RATE LIMIT =================
+const limiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 30, // 30 requests per minute per IP
+  message: "Too many requests. Please try again later."
+});
+
+app.use(limiter);
 
 // ================= MIDDLEWARE =================
 app.use(cors());
@@ -13,12 +23,9 @@ app.use(express.json());
 // ================= DATABASE CONNECTION =================
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false,
-  },
+  ssl: { rejectUnauthorized: false },
 });
 
-// Optional: Test DB connection at startup
 pool.connect()
   .then(() => console.log("✅ Connected to PostgreSQL"))
   .catch(err => console.error("❌ DB Connection Error:", err));
@@ -28,21 +35,27 @@ app.get("/", (req, res) => {
   res.send("Server running 🚀");
 });
 
-// ================= SAVE OR UPDATE SCORE =================
+// ================= VALIDATE ANSWER (SERVER-SIDE) =================
 app.post("/api/validate", async (req, res) => {
-  const { firebase_uid, answer, correctAnswer } = req.body;
+  const { firebase_uid, answer, puzzleDate } = req.body;
 
-  if (!firebase_uid || !answer || !correctAnswer) {
-    return res.status(400).json({ error: "Invalid request" });
+  if (!firebase_uid || !answer) {
+    return res.status(400).json({ error: "Missing fields" });
   }
 
-  const today = new Date().toISOString().split("T")[0];
-
-  const isCorrect = answer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
-
-  const scoreToAdd = isCorrect ? 10 : 0;
-
   try {
+    const today = puzzleDate || new Date().toISOString().split("T")[0];
+
+    // 🔐 Generate correct answer on server
+    const correctAnswer = generateServerPuzzleAnswer(today);
+
+    const isCorrect =
+      answer.toString().trim().toLowerCase() ===
+      correctAnswer.toString().trim().toLowerCase();
+
+    const scoreToAdd = isCorrect ? 10 : 0;
+
+    // Save daily score
     await pool.query(
       `INSERT INTO daily_scores (firebase_uid, score, puzzle_date)
        VALUES ($1, $2, $3)
@@ -52,19 +65,18 @@ app.post("/api/validate", async (req, res) => {
     );
 
     res.json({
-      success: true,
       correct: isCorrect,
       addedScore: scoreToAdd,
+      correctAnswer: correctAnswer
     });
 
   } catch (err) {
     console.error("Validation error:", err);
-    res.status(500).json({ error: "Database error" });
+    res.status(500).json({ error: "Server validation failed" });
   }
 });
 
-
-// ================= GET DAILY LEADERBOARD =================
+// ================= DAILY LEADERBOARD =================
 app.get("/api/leaderboard", async (req, res) => {
   const today = new Date().toISOString().split("T")[0];
 
@@ -85,80 +97,18 @@ app.get("/api/leaderboard", async (req, res) => {
   }
 });
 
-// ================= GET USER STATS =================
-app.post("/api/score", async (req, res) => {
-  try {
-    const { firebase_uid, answer, correctAnswer } = req.body;
-
-    if (!firebase_uid || !answer || !correctAnswer) {
-      return res.status(400).json({ error: "Invalid input" });
-    }
-
-    let scoreToAdd = 0;
-
-    if (answer === correctAnswer) {
-      scoreToAdd = 10;
-    }
-
-    await pool.query(
-      `INSERT INTO scores (firebase_uid, score)
-       VALUES ($1, $2)
-       ON CONFLICT (firebase_uid)
-       DO UPDATE SET score = scores.score + $2`,
-      [firebase_uid, scoreToAdd]
-    );
-
-    res.json({ message: "Score updated securely" });
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-
-// ================= START SERVER =================
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
-
-// ================= VALIDATE ANSWER =================
-app.post("/api/validate", async (req, res) => {
-  const { firebase_uid, answer, puzzleDate } = req.body;
-
-  if (!firebase_uid || !answer) {
-    return res.status(400).json({ error: "Missing fields" });
-  }
-
-  try {
-    // 🔐 Generate correct puzzle server-side
-    const correctAnswer = generateServerPuzzleAnswer(puzzleDate);
-
-    const isCorrect =
-      answer.toString().trim().toLowerCase() ===
-      correctAnswer.toString().trim().toLowerCase();
-
-    res.json({
-      correct: isCorrect,
-      correctAnswer: correctAnswer
-    });
-
-  } catch (err) {
-    console.error("Validation error:", err);
-    res.status(500).json({ error: "Server validation failed" });
-  }
-});
-
-// 🔥 SAME puzzle logic as frontend but hidden on server
+// ================= SERVER PUZZLE LOGIC =================
 function generateServerPuzzleAnswer(date) {
-  const today = new Date(date || new Date());
+  const today = new Date(date);
   const seed = today.getDate();
 
-  // Simple example puzzle logic
   const num1 = seed;
   const num2 = seed + 3;
 
   return (num1 + num2).toString();
 }
 
-
+// ================= START SERVER =================
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
