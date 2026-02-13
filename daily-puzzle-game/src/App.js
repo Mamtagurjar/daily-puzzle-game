@@ -81,9 +81,9 @@ function App() {
     setBatchCounter(0);
   };
 
-  // 🔥 SERVER VALIDATION
+  // 🔥 SECURE SERVER VALIDATION
   const checkAnswer = async () => {
-    if (attempted || !user || loading) return;
+    if (attempted || !puzzle || !user || loading) return;
 
     setLoading(true);
 
@@ -105,17 +105,16 @@ function App() {
       const data = await res.json();
 
       let newScore = score;
-      let newResult = "";
 
       if (data.correct) {
         newScore = score + 10;
-        newResult = "Correct ✅";
         setScore(newScore);
+        setResult("Correct ✅");
 
         const updatedBatch = batchCounter + 1;
         setBatchCounter(updatedBatch);
 
-        // 🔥 Sync every 5 correct
+        // 🔥 Batch sync every 5 correct answers
         if (updatedBatch >= 5) {
           await fetch(`${BASE_URL}/api/score`, {
             method: "POST",
@@ -133,16 +132,18 @@ function App() {
         }
 
       } else {
-        newResult = `Wrong ❌ (Correct: ${data.correctAnswer})`;
+        setResult(`Wrong ❌ (Correct: ${data.correctAnswer})`);
       }
 
-      setResult(newResult);
       setAttempted(true);
 
+      // 💾 Save locally
       await saveProgress(today, {
         score: newScore,
         attempted: true,
-        result: newResult,
+        result: data.correct
+          ? "Correct ✅"
+          : `Wrong ❌ (Correct: ${data.correctAnswer})`,
       });
 
     } catch (err) {
