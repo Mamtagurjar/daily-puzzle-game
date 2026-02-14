@@ -112,3 +112,18 @@ function generateServerPuzzleAnswer(date) {
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
+
+// ================= GET DAILY PUZZLE =================
+app.get("/api/puzzle", (req, res) => {
+  const today = new Date();
+  const seed = today.getDate();
+
+  const num1 = seed;
+  const num2 = seed + 3;
+
+  const question = `What is ${num1} + ${num2}?`;
+
+  res.json({
+    question: question,
+  });
+});
