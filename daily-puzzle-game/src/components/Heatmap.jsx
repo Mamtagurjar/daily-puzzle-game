@@ -1,19 +1,17 @@
 import { useEffect, useState, useMemo } from "react";
-import { motion } from "framer-motion";
 import dayjs from "dayjs";
 import { getAllActivity } from "../utils/activityDB";
 
 const intensityMap = {
-  0: "bg-gray-200",
+  0: "bg-gray-300",
   1: "bg-green-200",
   2: "bg-green-400",
   3: "bg-green-600",
-  4: "bg-green-800",
+  4: "bg-green-800"
 };
 
 function Heatmap() {
-  const [activity, setActivity] = useState({});
-  const [hoverData, setHoverData] = useState(null);
+  const [activity, setActivity] = useState([]);
 
   useEffect(() => {
     loadActivity();
@@ -21,89 +19,71 @@ function Heatmap() {
 
   const loadActivity = async () => {
     const data = await getAllActivity();
-    const map = {};
-    data.forEach(item => {
-      map[item.date] = item;
-    });
-    setActivity(map);
+    setActivity(data);
   };
 
+  const activityMap = useMemo(() => {
+    const map = {};
+    activity.forEach(item => {
+      map[item.date] = item;
+    });
+    return map;
+  }, [activity]);
+
   const days = useMemo(() => {
-    const startOfYear = dayjs().startOf("year");
-    const list = [];
-    for (let i = 0; i < 365; i++) {
-      list.push(startOfYear.add(i, "day"));
+    const start = dayjs().startOf("year");
+    const totalDays = dayjs().isLeapYear() ? 366 : 365;
+
+    const arr = [];
+    for (let i = 0; i < totalDays; i++) {
+      arr.push(start.add(i, "day"));
     }
-    return list;
+    return arr;
   }, []);
 
   const getIntensity = (date) => {
-    const item = activity[date];
-    if (!item || !item.solved) return 0;
+    const formatted = date.format("YYYY-MM-DD");
+    const entry = activityMap[formatted];
 
-    if (item.score >= 10) return 4;
-    return 2;
+    if (!entry || !entry.solved) return 0;
+
+    if (entry.score >= 10 && entry.timeTaken < 15) return 4;
+    if (entry.score >= 10 && entry.timeTaken < 30) return 3;
+    if (entry.score >= 10) return 2;
+    return 1;
   };
 
-  return (
-    <div className="mt-10">
+  // Group by week
+  const weeks = [];
+  days.forEach((day) => {
+    const weekIndex = Math.floor(day.diff(days[0], "day") / 7);
+    if (!weeks[weekIndex]) weeks[weekIndex] = [];
+    weeks[weekIndex].push(day);
+  });
 
-      {/* Title */}
+  return (
+    <div className="mt-10 w-full max-w-5xl">
       <h2 className="text-xl font-bold mb-4 text-center">
         📊 Activity Heatmap
       </h2>
 
-      {/* Grid */}
-      <div className="grid grid-cols-53 gap-1 overflow-x-auto">
+      <div className="flex gap-1 overflow-x-auto">
+        {weeks.map((week, weekIndex) => (
+          <div key={weekIndex} className="flex flex-col gap-1">
+            {week.map((day, dayIndex) => {
+              const intensity = getIntensity(day);
 
-        {days.map((day, index) => {
-          const dateStr = day.format("YYYY-MM-DD");
-          const intensity = getIntensity(dateStr);
-
-          return (
-            <motion.div
-              key={index}
-              whileHover={{ scale: 1.3 }}
-              transition={{ type: "spring", stiffness: 300 }}
-              onMouseEnter={() =>
-                setHoverData({
-                  date: dateStr,
-                  data: activity[dateStr],
-                })
-              }
-              onMouseLeave={() => setHoverData(null)}
-              className={`w-4 h-4 rounded-sm cursor-pointer ${intensityMap[intensity]}`}
-            />
-          );
-        })}
-
-      </div>
-
-      {/* Tooltip */}
-      {hoverData && (
-        <div className="mt-4 text-center text-sm bg-black/40 p-2 rounded-lg">
-          <p>{hoverData.date}</p>
-          {hoverData.data?.solved ? (
-            <>
-              <p>Score: {hoverData.data.score}</p>
-              <p>Time: {hoverData.data.timeTaken}s</p>
-              <p>Difficulty: {hoverData.data.difficulty}</p>
-            </>
-          ) : (
-            <p>Not Played</p>
-          )}
-        </div>
-      )}
-
-      {/* Legend */}
-      <div className="flex justify-center items-center gap-2 mt-4 text-sm">
-        <span>Less</span>
-        {Object.values(intensityMap).map((color, i) => (
-          <div key={i} className={`w-4 h-4 ${color} rounded-sm`} />
+              return (
+                <div
+                  key={dayIndex}
+                  title={day.format("YYYY-MM-DD")}
+                  className={`w-4 h-4 rounded-sm ${intensityMap[intensity]}`}
+                />
+              );
+            })}
+          </div>
         ))}
-        <span>More</span>
       </div>
-
     </div>
   );
 }
